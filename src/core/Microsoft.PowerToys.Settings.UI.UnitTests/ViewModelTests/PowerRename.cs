@@ -3,45 +3,75 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
-using System.IO;
 using System.Text.Json;
-using Microsoft.PowerToys.Settings.UI.Lib;
-using Microsoft.PowerToys.Settings.UI.Lib.ViewModels;
+using Microsoft.PowerToys.Settings.UI.Library;
+using Microsoft.PowerToys.Settings.UI.Library.ViewModels;
+using Microsoft.PowerToys.Settings.UI.UnitTests.BackwardsCompatibility;
+using Microsoft.PowerToys.Settings.UI.UnitTests.Mocks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Moq;
 
 namespace ViewModelTests
 {
     [TestClass]
     public class PowerRename
     {
-        public const string ModuleName = "PowerRename";
-        public const string generalSettings_file_name = "Test\\PowerRename";
-        [TestInitialize]
-        public void Setup()
-        {
-            // initialize creation of test settings file.
-            GeneralSettings generalSettings = new GeneralSettings();
-            PowerRenameSettings powerRename = new PowerRenameSettings();
+        public const string GeneralSettingsFileName = "Test\\PowerRename";
 
-            SettingsUtils.SaveSettings(generalSettings.ToJsonString());
-            SettingsUtils.SaveSettings(powerRename.ToJsonString(), generalSettings_file_name, "power-rename-settings.json");
+        private Mock<ISettingsUtils> mockGeneralSettingsUtils;
+
+        private Mock<ISettingsUtils> mockPowerRenamePropertiesUtils;
+
+        [TestInitialize]
+        public void SetUpStubSettingUtils()
+        {
+            mockGeneralSettingsUtils = ISettingsUtilsMocks.GetStubSettingsUtils<GeneralSettings>();
+            mockPowerRenamePropertiesUtils = ISettingsUtilsMocks.GetStubSettingsUtils<PowerRenameLocalProperties>();
         }
 
-        [TestCleanup]
-        public void CleanUp()
+        /// <summary>
+        /// Test if the original settings files were modified.
+        /// </summary>
+        [TestMethod]
+        [DataRow("v0.18.2", "power-rename-settings.json")]
+        [DataRow("v0.19.2", "power-rename-settings.json")]
+        [DataRow("v0.20.1", "power-rename-settings.json")]
+        [DataRow("v0.22.0", "power-rename-settings.json")]
+        public void OriginalFilesModificationTest(string version, string fileName)
         {
-            // delete folder created.
-            if (SettingsUtils.SettingsFolderExists(generalSettings_file_name))
-            {
-                DeleteFolder(generalSettings_file_name);
-            }
+            var settingPathMock = new Mock<ISettingsPath>();
+            var mockIOProvider = BackCompatTestProperties.GetModuleIOProvider(version, PowerRenameSettings.ModuleName, fileName);
+
+            var mockSettingsUtils = new SettingsUtils(mockIOProvider.Object, settingPathMock.Object);
+            PowerRenameLocalProperties originalSettings = mockSettingsUtils.GetSettings<PowerRenameLocalProperties>(PowerRenameSettings.ModuleName);
+
+            var mockGeneralIOProvider = BackCompatTestProperties.GetGeneralSettingsIOProvider(version);
+
+            var mockGeneralSettingsUtils = new SettingsUtils(mockGeneralIOProvider.Object, settingPathMock.Object);
+            GeneralSettings originalGeneralSettings = mockGeneralSettingsUtils.GetSettings<GeneralSettings>();
+            var generalSettingsRepository = new BackCompatTestProperties.MockSettingsRepository<GeneralSettings>(mockGeneralSettingsUtils);
+
+            // Initialise View Model with test Config files
+            Func<string, int> sendMockIPCConfigMSG = msg => { return 0; };
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockSettingsUtils, generalSettingsRepository, sendMockIPCConfigMSG);
+
+            // Verify that the old settings persisted
+            Assert.AreEqual(originalGeneralSettings.Enabled.PowerRename, viewModel.IsEnabled);
+            Assert.AreEqual(originalSettings.ExtendedContextMenuOnly, viewModel.EnabledOnContextExtendedMenu);
+            Assert.AreEqual(originalSettings.MRUEnabled, viewModel.MRUEnabled);
+            Assert.AreEqual(originalSettings.ShowIcon, viewModel.EnabledOnContextMenu);
+
+            // Verify that the stub file was used
+            var expectedCallCount = 2;  // once via the view model, and once by the test (GetSettings<T>)
+            BackCompatTestProperties.VerifyModuleIOProviderWasRead(mockIOProvider, PowerRenameSettings.ModuleName, expectedCallCount);
+            BackCompatTestProperties.VerifyGeneralSettingsIOProviderWasRead(mockGeneralIOProvider, expectedCallCount);
         }
 
         [TestMethod]
-        public void IsEnabled_ShouldEnableModule_WhenSuccessful()
+        public void IsEnabledShouldEnableModuleWhenSuccessful()
         {
             // Assert
-            Func<string, int> SendMockIPCConfigMSG = msg =>
+            Func<string, int> sendMockIPCConfigMSG = msg =>
             {
                 OutGoingGeneralSettings snd = JsonSerializer.Deserialize<OutGoingGeneralSettings>(msg);
                 Assert.IsTrue(snd.GeneralSettings.Enabled.PowerRename);
@@ -49,17 +79,17 @@ namespace ViewModelTests
             };
 
             // arrange
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             // act
             viewModel.IsEnabled = true;
         }
 
         [TestMethod]
-        public void MRUEnabled_ShouldSetValue2True_WhenSuccessful()
+        public void MRUEnabledShouldSetValue2TrueWhenSuccessful()
         {
             // Assert
-            Func<string, int> SendMockIPCConfigMSG = msg =>
+            Func<string, int> sendMockIPCConfigMSG = msg =>
             {
                 PowerRenameSettingsIPCMessage snd = JsonSerializer.Deserialize<PowerRenameSettingsIPCMessage>(msg);
                 Assert.IsTrue(snd.Powertoys.PowerRename.Properties.MRUEnabled.Value);
@@ -67,7 +97,7 @@ namespace ViewModelTests
             };
 
             // arrange
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             // act
             viewModel.MRUEnabled = true;
@@ -76,8 +106,8 @@ namespace ViewModelTests
         [TestMethod]
         public void WhenIsEnabledIsOffAndMRUEnabledIsOffGlobalAndMruShouldBeOff()
         {
-            Func<string, int> SendMockIPCConfigMSG = msg => { return 0; };
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            Func<string, int> sendMockIPCConfigMSG = msg => { return 0; };
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             viewModel.IsEnabled = false;
             viewModel.MRUEnabled = false;
@@ -88,8 +118,8 @@ namespace ViewModelTests
         [TestMethod]
         public void WhenIsEnabledIsOffAndMRUEnabledIsOnGlobalAndMruShouldBeOff()
         {
-            Func<string, int> SendMockIPCConfigMSG = msg => { return 0; };
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            Func<string, int> sendMockIPCConfigMSG = msg => { return 0; };
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             viewModel.IsEnabled = false;
             viewModel.MRUEnabled = true;
@@ -100,8 +130,8 @@ namespace ViewModelTests
         [TestMethod]
         public void WhenIsEnabledIsOnAndMRUEnabledIsOffGlobalAndMruShouldBeOff()
         {
-            Func<string, int> SendMockIPCConfigMSG = msg => { return 0; };
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            Func<string, int> sendMockIPCConfigMSG = msg => { return 0; };
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             viewModel.IsEnabled = true;
             viewModel.MRUEnabled = false;
@@ -112,8 +142,8 @@ namespace ViewModelTests
         [TestMethod]
         public void WhenIsEnabledIsOnAndMRUEnabledIsOnGlobalAndMruShouldBeOn()
         {
-            Func<string, int> SendMockIPCConfigMSG = msg => { return 0; };
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            Func<string, int> sendMockIPCConfigMSG = msg => { return 0; };
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             viewModel.IsEnabled = true;
             viewModel.MRUEnabled = true;
@@ -122,10 +152,10 @@ namespace ViewModelTests
         }
 
         [TestMethod]
-        public void EnabledOnContextMenu_ShouldSetValue2True_WhenSuccessful()
+        public void EnabledOnContextMenuShouldSetValue2TrueWhenSuccessful()
         {
             // Assert
-            Func<string, int> SendMockIPCConfigMSG = msg =>
+            Func<string, int> sendMockIPCConfigMSG = msg =>
             {
                 PowerRenameSettingsIPCMessage snd = JsonSerializer.Deserialize<PowerRenameSettingsIPCMessage>(msg);
                 Assert.IsTrue(snd.Powertoys.PowerRename.Properties.ShowIcon.Value);
@@ -133,17 +163,17 @@ namespace ViewModelTests
             };
 
             // arrange
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             // act
             viewModel.EnabledOnContextMenu = true;
         }
 
         [TestMethod]
-        public void EnabledOnContextExtendedMenu_ShouldSetValue2True_WhenSuccessful()
+        public void EnabledOnContextExtendedMenuShouldSetValue2TrueWhenSuccessful()
         {
             // Assert
-            Func<string, int> SendMockIPCConfigMSG = msg =>
+            Func<string, int> sendMockIPCConfigMSG = msg =>
             {
                 PowerRenameSettingsIPCMessage snd = JsonSerializer.Deserialize<PowerRenameSettingsIPCMessage>(msg);
                 Assert.IsTrue(snd.Powertoys.PowerRename.Properties.ShowIcon.Value);
@@ -151,17 +181,17 @@ namespace ViewModelTests
             };
 
             // arrange
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             // act
             viewModel.EnabledOnContextMenu = true;
         }
 
         [TestMethod]
-        public void RestoreFlagsOnLaunch_ShouldSetValue2True_WhenSuccessful()
+        public void RestoreFlagsOnLaunchShouldSetValue2TrueWhenSuccessful()
         {
             // Assert
-            Func<string, int> SendMockIPCConfigMSG = msg =>
+            Func<string, int> sendMockIPCConfigMSG = msg =>
             {
                 PowerRenameSettingsIPCMessage snd = JsonSerializer.Deserialize<PowerRenameSettingsIPCMessage>(msg);
                 Assert.IsTrue(snd.Powertoys.PowerRename.Properties.PersistState.Value);
@@ -169,17 +199,17 @@ namespace ViewModelTests
             };
 
             // arrange
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             // act
             viewModel.RestoreFlagsOnLaunch = true;
         }
 
         [TestMethod]
-        public void MaxDispListNum_ShouldSetMaxSuggListTo20_WhenSuccessful()
+        public void MaxDispListNumShouldSetMaxSuggListTo20WhenSuccessful()
         {
             // Assert
-            Func<string, int> SendMockIPCConfigMSG = msg =>
+            Func<string, int> sendMockIPCConfigMSG = msg =>
             {
                 PowerRenameSettingsIPCMessage snd = JsonSerializer.Deserialize<PowerRenameSettingsIPCMessage>(msg);
                 Assert.AreEqual(20, snd.Powertoys.PowerRename.Properties.MaxMRUSize.Value);
@@ -187,15 +217,10 @@ namespace ViewModelTests
             };
 
             // arrange
-            PowerRenameViewModel viewModel = new PowerRenameViewModel(SendMockIPCConfigMSG, generalSettings_file_name);
+            PowerRenameViewModel viewModel = new PowerRenameViewModel(mockPowerRenamePropertiesUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), sendMockIPCConfigMSG, GeneralSettingsFileName);
 
             // act
             viewModel.MaxDispListNum = 20;
-        }
-
-        public void DeleteFolder(string powertoy)
-        {
-            Directory.Delete(Path.Combine(SettingsUtils.LocalApplicationDataFolder(), $"Microsoft\\PowerToys\\{powertoy}"), true);
         }
     }
 }

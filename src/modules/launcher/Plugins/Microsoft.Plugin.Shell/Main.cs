@@ -8,13 +8,15 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Reflection;
 using System.Windows.Input;
-using Microsoft.PowerToys.Settings.UI.Lib;
-using Wox.Infrastructure.Logger;
+using ManagedCommon;
+using Microsoft.PowerToys.Settings.UI.Library;
 using Wox.Infrastructure.Storage;
 using Wox.Plugin;
+using Wox.Plugin.Logger;
 using Wox.Plugin.SharedCommands;
 using Control = System.Windows.Controls.Control;
 
@@ -22,8 +24,13 @@ namespace Microsoft.Plugin.Shell
 {
     public class Main : IPlugin, ISettingProvider, IPluginI18n, IContextMenu, ISavable
     {
-        private readonly Settings _settings;
-        private readonly PluginJsonStorage<Settings> _storage;
+        private static readonly IFileSystem FileSystem = new FileSystem();
+        private static readonly IPath Path = FileSystem.Path;
+        private static readonly IFile File = FileSystem.File;
+        private static readonly IDirectory Directory = FileSystem.Directory;
+
+        private readonly ShellPluginSettings _settings;
+        private readonly PluginJsonStorage<ShellPluginSettings> _storage;
 
         private string IconPath { get; set; }
 
@@ -31,7 +38,7 @@ namespace Microsoft.Plugin.Shell
 
         public Main()
         {
-            _storage = new PluginJsonStorage<Settings>();
+            _storage = new PluginJsonStorage<ShellPluginSettings>();
             _settings = _storage.Load();
         }
 
@@ -40,8 +47,14 @@ namespace Microsoft.Plugin.Shell
             _storage.Save();
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Keeping the process alive, but logging the exception")]
         public List<Result> Query(Query query)
         {
+            if (query == null)
+            {
+                throw new ArgumentNullException(nameof(query));
+            }
+
             List<Result> results = new List<Result>();
             string cmd = query.Search;
             if (string.IsNullOrEmpty(cmd))
@@ -57,12 +70,12 @@ namespace Microsoft.Plugin.Shell
 
                 try
                 {
-                    List<Result> folderPluginResults = Folder.Main.GetFolderPluginResults(query);
+                    IEnumerable<Result> folderPluginResults = Folder.Main.GetFolderPluginResults(query);
                     results.AddRange(folderPluginResults);
                 }
                 catch (Exception e)
                 {
-                    Log.Exception($"|Microsoft.Plugin.Shell.Main.Query|Exception when query for <{query}>", e);
+                    Log.Exception($"Exception when query for <{query}>", e, GetType());
                 }
 
                 return results;
@@ -71,20 +84,23 @@ namespace Microsoft.Plugin.Shell
 
         private List<Result> GetHistoryCmds(string cmd, Result result)
         {
-            IEnumerable<Result> history = _settings.Count.Where(o => o.Key.Contains(cmd))
+            IEnumerable<Result> history = _settings.Count.Where(o => o.Key.Contains(cmd, StringComparison.CurrentCultureIgnoreCase))
                 .OrderByDescending(o => o.Value)
                 .Select(m =>
                 {
                     if (m.Key == cmd)
                     {
-                        result.SubTitle = "Shell: " + string.Format(_context.API.GetTranslation("wox_plugin_cmd_cmd_has_been_executed_times"), m.Value);
+                        // Using CurrentCulture since this is user facing
+                        result.SubTitle = Properties.Resources.wox_plugin_cmd_plugin_name + ": " + string.Format(CultureInfo.CurrentCulture, Properties.Resources.wox_plugin_cmd_cmd_has_been_executed_times, m.Value);
                         return null;
                     }
 
                     var ret = new Result
                     {
                         Title = m.Key,
-                        SubTitle = "Shell: " + string.Format(_context.API.GetTranslation("wox_plugin_cmd_cmd_has_been_executed_times"), m.Value),
+
+                        // Using CurrentCulture since this is user facing
+                        SubTitle = Properties.Resources.wox_plugin_cmd_plugin_name + ": " + string.Format(CultureInfo.CurrentCulture, Properties.Resources.wox_plugin_cmd_cmd_has_been_executed_times, m.Value),
                         IcoPath = IconPath,
                         Action = c =>
                         {
@@ -103,7 +119,7 @@ namespace Microsoft.Plugin.Shell
             {
                 Title = cmd,
                 Score = 5000,
-                SubTitle = "Shell: " + _context.API.GetTranslation("wox_plugin_cmd_execute_through_shell"),
+                SubTitle = Properties.Resources.wox_plugin_cmd_plugin_name + ": " + Properties.Resources.wox_plugin_cmd_execute_through_shell,
                 IcoPath = IconPath,
                 Action = c =>
                 {
@@ -121,7 +137,9 @@ namespace Microsoft.Plugin.Shell
                 .Select(m => new Result
                 {
                     Title = m.Key,
-                    SubTitle = "Shell: " + string.Format(_context.API.GetTranslation("wox_plugin_cmd_cmd_has_been_executed_times"), m.Value),
+
+                    // Using CurrentCulture since this is user facing
+                    SubTitle = Properties.Resources.wox_plugin_cmd_plugin_name + ": " + string.Format(CultureInfo.CurrentCulture, Properties.Resources.wox_plugin_cmd_cmd_has_been_executed_times, m.Value),
                     IcoPath = IconPath,
                     Action = c =>
                     {
@@ -140,13 +158,13 @@ namespace Microsoft.Plugin.Shell
             var runAsAdministratorArg = !runAsAdministrator && !_settings.RunAsAdministrator ? string.Empty : "runas";
 
             ProcessStartInfo info;
-            if (_settings.Shell == Shell.Cmd)
+            if (_settings.Shell == ExecutionShell.Cmd)
             {
                 var arguments = _settings.LeaveShellOpen ? $"/k \"{command}\"" : $"/c \"{command}\" & pause";
 
                 info = ShellCommand.SetProcessStartInfo("cmd.exe", workingDirectory, arguments, runAsAdministratorArg);
             }
-            else if (_settings.Shell == Shell.Powershell)
+            else if (_settings.Shell == ExecutionShell.Powershell)
             {
                 string arguments;
                 if (_settings.LeaveShellOpen)
@@ -160,7 +178,7 @@ namespace Microsoft.Plugin.Shell
 
                 info = ShellCommand.SetProcessStartInfo("powershell.exe", workingDirectory, arguments, runAsAdministratorArg);
             }
-            else if (_settings.Shell == Shell.RunCommand)
+            else if (_settings.Shell == ExecutionShell.RunCommand)
             {
                 // Open explorer if the path is a file or directory
                 if (Directory.Exists(command) || File.Exists(command))
@@ -209,19 +227,19 @@ namespace Microsoft.Plugin.Shell
             }
             catch (FileNotFoundException e)
             {
-                var name = "Plugin: Shell";
-                var message = $"Command not found: {e.Message}";
+                var name = "Plugin: " + Properties.Resources.wox_plugin_cmd_plugin_name;
+                var message = $"{Properties.Resources.wox_plugin_cmd_command_not_found}: {e.Message}";
                 _context.API.ShowMsg(name, message);
             }
             catch (Win32Exception e)
             {
-                var name = "Plugin: Shell";
-                var message = $"Error running the command: {e.Message}";
+                var name = "Plugin: " + Properties.Resources.wox_plugin_cmd_plugin_name;
+                var message = $"{Properties.Resources.wox_plugin_cmd_command_failed}: {e.Message}";
                 _context.API.ShowMsg(name, message);
             }
         }
 
-        private bool ExistInPath(string filename)
+        private static bool ExistInPath(string filename)
         {
             if (File.Exists(filename))
             {
@@ -278,17 +296,17 @@ namespace Microsoft.Plugin.Shell
 
         public Control CreateSettingPanel()
         {
-            return new CMDSetting(_settings);
+            throw new NotImplementedException();
         }
 
         public string GetTranslatedPluginTitle()
         {
-            return _context.API.GetTranslation("wox_plugin_cmd_plugin_name");
+            return Properties.Resources.wox_plugin_cmd_plugin_name;
         }
 
         public string GetTranslatedPluginDescription()
         {
-            return _context.API.GetTranslation("wox_plugin_cmd_plugin_description");
+            return Properties.Resources.wox_plugin_cmd_plugin_description;
         }
 
         public List<ContextMenuResult> LoadContextMenus(Result selectedResult)
@@ -298,7 +316,7 @@ namespace Microsoft.Plugin.Shell
                 new ContextMenuResult
                 {
                     PluginName = Assembly.GetExecutingAssembly().GetName().Name,
-                    Title = _context.API.GetTranslation("wox_plugin_cmd_run_as_administrator"),
+                    Title = Properties.Resources.wox_plugin_cmd_run_as_administrator,
                     Glyph = "\xE7EF",
                     FontFamily = "Segoe MDL2 Assets",
                     AcceleratorKey = Key.Enter,

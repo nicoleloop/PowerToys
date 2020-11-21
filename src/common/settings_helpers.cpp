@@ -6,6 +6,7 @@
 namespace PTSettingsHelper
 {
     constexpr inline const wchar_t* settings_filename = L"\\settings.json";
+    constexpr inline const wchar_t* log_settings_filename = L"log_settings.json";
 
     std::wstring get_root_save_folder_location()
     {
@@ -23,11 +24,11 @@ namespace PTSettingsHelper
         return result;
     }
 
-    std::wstring get_module_save_folder_location(std::wstring_view powertoy_name)
+    std::wstring get_module_save_folder_location(std::wstring_view powertoy_key)
     {
         std::wstring result = get_root_save_folder_location();
         result += L"\\";
-        result += powertoy_name;
+        result += powertoy_key;
         std::filesystem::path save_path(result);
         if (!std::filesystem::exists(save_path))
         {
@@ -36,9 +37,9 @@ namespace PTSettingsHelper
         return result;
     }
 
-    std::wstring get_module_save_file_location(std::wstring_view powertoy_name)
+    std::wstring get_module_save_file_location(std::wstring_view powertoy_key)
     {
-        return get_module_save_folder_location(powertoy_name) + settings_filename;
+        return get_module_save_folder_location(powertoy_key) + settings_filename;
     }
 
     std::wstring get_powertoys_general_save_file_location()
@@ -46,15 +47,15 @@ namespace PTSettingsHelper
         return get_root_save_folder_location() + settings_filename;
     }
 
-    void save_module_settings(std::wstring_view powertoy_name, json::JsonObject& settings)
+    void save_module_settings(std::wstring_view powertoy_key, json::JsonObject& settings)
     {
-        const std::wstring save_file_location = get_module_save_file_location(powertoy_name);
+        const std::wstring save_file_location = get_module_save_file_location(powertoy_key);
         json::to_file(save_file_location, settings);
     }
 
-    json::JsonObject load_module_settings(std::wstring_view powertoy_name)
+    json::JsonObject load_module_settings(std::wstring_view powertoy_key)
     {
-        const std::wstring save_file_location = get_module_save_file_location(powertoy_name);
+        const std::wstring save_file_location = get_module_save_file_location(powertoy_key);
         auto saved_settings = json::from_file(save_file_location);
         return saved_settings.has_value() ? std::move(*saved_settings) : json::JsonObject{};
     }
@@ -70,5 +71,12 @@ namespace PTSettingsHelper
         const std::wstring save_file_location = get_powertoys_general_save_file_location();
         auto saved_settings = json::from_file(save_file_location);
         return saved_settings.has_value() ? std::move(*saved_settings) : json::JsonObject{};
+    }
+
+    std::wstring get_log_settings_file_location()
+    {
+        std::filesystem::path result(PTSettingsHelper::get_root_save_folder_location());
+        result = result.append(log_settings_filename);
+        return result.wstring();
     }
 }

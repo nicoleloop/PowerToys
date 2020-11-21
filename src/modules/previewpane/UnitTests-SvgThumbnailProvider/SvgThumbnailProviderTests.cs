@@ -9,6 +9,7 @@ using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using Common.ComInterlop;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Microsoft.PowerToys.ThumbnailHandler.Svg;
 using Moq;
 
 namespace SvgThumbnailProviderUnitTests
@@ -17,7 +18,7 @@ namespace SvgThumbnailProviderUnitTests
     public class SvgThumbnailProviderTests
     {
         [TestMethod]
-        public void LoadSimpleSVG_ShouldReturnNonNullBitmap()
+        public void LoadSimpleSVGShouldReturnNonNullBitmap()
         {
             var svgBuilder = new StringBuilder();
             svgBuilder.AppendLine("<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\">");
@@ -25,12 +26,12 @@ namespace SvgThumbnailProviderUnitTests
             svgBuilder.AppendLine("\t</circle>");
             svgBuilder.AppendLine("</svg>");
 
-            Bitmap thumbnail = SvgThumbnailProvider.SvgThumbnailProvider.GetThumbnail(svgBuilder.ToString(), 256);
+            Bitmap thumbnail = SvgThumbnailProvider.GetThumbnail(svgBuilder.ToString(), 256);
             Assert.IsTrue(thumbnail != null);
         }
 
         [TestMethod]
-        public void CheckBlockedElements_ShouldReturnNonNullBitmap_IfBlockedElementsIsPresentInNestedLevel()
+        public void CheckBlockedElementsShouldReturnNonNullBitmapIfBlockedElementsIsPresentInNestedLevel()
         {
             var svgBuilder = new StringBuilder();
             svgBuilder.AppendLine("<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\">");
@@ -39,44 +40,44 @@ namespace SvgThumbnailProviderUnitTests
             svgBuilder.AppendLine("\t</circle>");
             svgBuilder.AppendLine("</svg>");
 
-            Bitmap thumbnail = SvgThumbnailProvider.SvgThumbnailProvider.GetThumbnail(svgBuilder.ToString(), 256);
+            Bitmap thumbnail = SvgThumbnailProvider.GetThumbnail(svgBuilder.ToString(), 256);
             Assert.IsTrue(thumbnail != null);
         }
 
         [TestMethod]
-        public void CheckNoSvg_ShouldReturnNullBitmap()
+        public void CheckNoSvgShouldReturnNullBitmap()
         {
             var svgBuilder = new StringBuilder();
             svgBuilder.AppendLine("<p>foo</p>");
 
-            Bitmap thumbnail = SvgThumbnailProvider.SvgThumbnailProvider.GetThumbnail(svgBuilder.ToString(), 256);
+            Bitmap thumbnail = SvgThumbnailProvider.GetThumbnail(svgBuilder.ToString(), 256);
             Assert.IsTrue(thumbnail == null);
         }
 
         [TestMethod]
-        public void CheckNoSvgEmptyString_ShouldReturnNullBitmap()
+        public void CheckNoSvgEmptyStringShouldReturnNullBitmap()
         {
-            Bitmap thumbnail = SvgThumbnailProvider.SvgThumbnailProvider.GetThumbnail(string.Empty, 256);
+            Bitmap thumbnail = SvgThumbnailProvider.GetThumbnail(string.Empty, 256);
             Assert.IsTrue(thumbnail == null);
         }
 
         [TestMethod]
-        public void CheckNoSvgNullString_ShouldReturnNullBitmap()
+        public void CheckNoSvgNullStringShouldReturnNullBitmap()
         {
-            Bitmap thumbnail = SvgThumbnailProvider.SvgThumbnailProvider.GetThumbnail(null, 256);
+            Bitmap thumbnail = SvgThumbnailProvider.GetThumbnail(null, 256);
             Assert.IsTrue(thumbnail == null);
         }
 
         [TestMethod]
-        public void CheckZeroSizedThumbnail_ShouldReturnNullBitmap()
+        public void CheckZeroSizedThumbnailShouldReturnNullBitmap()
         {
             string content = "<svg></svg>";
-            Bitmap thumbnail = SvgThumbnailProvider.SvgThumbnailProvider.GetThumbnail(content, 0);
+            Bitmap thumbnail = SvgThumbnailProvider.GetThumbnail(content, 0);
             Assert.IsTrue(thumbnail == null);
         }
 
         [TestMethod]
-        public void CheckBlockedElements_ShouldReturnBitmap_HTMLWrapped()
+        public void CheckBlockedElementsShouldReturnBitmapHTMLWrapped()
         {
             var svgBuilder = new StringBuilder();
             svgBuilder.AppendLine("<html>");
@@ -92,12 +93,12 @@ namespace SvgThumbnailProviderUnitTests
             svgBuilder.AppendLine("</body>");
             svgBuilder.AppendLine("</html>");
 
-            Bitmap thumbnail = SvgThumbnailProvider.SvgThumbnailProvider.GetThumbnail(svgBuilder.ToString(), 256);
+            Bitmap thumbnail = SvgThumbnailProvider.GetThumbnail(svgBuilder.ToString(), 256);
             Assert.IsTrue(thumbnail != null);
         }
 
         [TestMethod]
-        public void GetThumbnail_ValidStreamSVG()
+        public void GetThumbnailValidStreamSVG()
         {
             var svgBuilder = new StringBuilder();
             svgBuilder.AppendLine("<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\">");
@@ -105,7 +106,7 @@ namespace SvgThumbnailProviderUnitTests
             svgBuilder.AppendLine("</circle>");
             svgBuilder.AppendLine("</svg>");
 
-            SvgThumbnailProvider.SvgThumbnailProvider provider = new SvgThumbnailProvider.SvgThumbnailProvider();
+            SvgThumbnailProvider provider = new SvgThumbnailProvider();
 
             provider.Initialize(GetMockStream(svgBuilder.ToString()), 0);
 
@@ -118,7 +119,7 @@ namespace SvgThumbnailProviderUnitTests
         }
 
         [TestMethod]
-        public void GetThumbnail_ValidStreamHTML()
+        public void GetThumbnailValidStreamHTML()
         {
             var svgBuilder = new StringBuilder();
             svgBuilder.AppendLine("<html>");
@@ -134,7 +135,7 @@ namespace SvgThumbnailProviderUnitTests
             svgBuilder.AppendLine("</body>");
             svgBuilder.AppendLine("</html>");
 
-            SvgThumbnailProvider.SvgThumbnailProvider provider = new SvgThumbnailProvider.SvgThumbnailProvider();
+            SvgThumbnailProvider provider = new SvgThumbnailProvider();
 
             provider.Initialize(GetMockStream(svgBuilder.ToString()), 0);
 
@@ -146,7 +147,7 @@ namespace SvgThumbnailProviderUnitTests
             Assert.IsTrue(alphaType == WTS_ALPHATYPE.WTSAT_RGB);
         }
 
-        private IStream GetMockStream(string streamData)
+        private static IStream GetMockStream(string streamData)
         {
             var mockStream = new Mock<IStream>();
             var streamBytes = Encoding.UTF8.GetBytes(streamData);

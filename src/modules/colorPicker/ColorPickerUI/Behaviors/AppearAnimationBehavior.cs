@@ -37,21 +37,23 @@ namespace ColorPicker.Behaviors
 
         private void Appear()
         {
-            var opacityAppear = new DoubleAnimation(0, 1.0, new Duration(TimeSpan.FromMilliseconds(250)));
-            opacityAppear.EasingFunction = new QuadraticEase() { EasingMode = EasingMode.EaseOut };
+            var duration = new Duration(TimeSpan.FromMilliseconds(250));
 
-            var resize = new DoubleAnimation(0, 180, new Duration(TimeSpan.FromMilliseconds(250)));
-            resize.EasingFunction = new ExponentialEase() { EasingMode = EasingMode.EaseOut };
-            AssociatedObject.BeginAnimation(Window.OpacityProperty, opacityAppear);
-            AssociatedObject.BeginAnimation(Window.WidthProperty, resize);
+            var opacityAppear = new DoubleAnimation(0d, 1d, duration)
+            {
+                EasingFunction = new CubicEase() { EasingMode = EasingMode.EaseInOut },
+            };
+
+            AssociatedObject.BeginAnimation(UIElement.OpacityProperty, opacityAppear);
         }
 
         private void Hide()
         {
-            var opacityAppear = new DoubleAnimation(0, new Duration(TimeSpan.FromMilliseconds(1)));
-            var resize = new DoubleAnimation(0, new Duration(TimeSpan.FromMilliseconds(1)));
-            AssociatedObject.BeginAnimation(Window.OpacityProperty, opacityAppear);
-            AssociatedObject.BeginAnimation(Window.WidthProperty, resize);
+            var duration = new Duration(TimeSpan.FromMilliseconds(1));
+
+            var opacityAppear = new DoubleAnimation(0d, duration);
+
+            AssociatedObject.BeginAnimation(UIElement.OpacityProperty, opacityAppear);
         }
     }
 }

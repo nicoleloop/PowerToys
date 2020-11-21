@@ -9,7 +9,7 @@ namespace ZonedWindowProperties
     const wchar_t PropertyRestoreSizeID[]   = L"FancyZones_RestoreSize";
     const wchar_t PropertyRestoreOriginID[] = L"FancyZones_RestoreOrigin";
 
-    const wchar_t MultiMonitorDeviceID[]    = L"FancyZones_MultiMonitorDevice";
+    const wchar_t MultiMonitorDeviceID[]    = L"FancyZones#MultiMonitorDevice";
 }
 
 struct Settings
@@ -22,6 +22,7 @@ struct Settings
     bool zoneSetChange_moveWindows = false;
     bool overrideSnapHotkeys = false;
     bool moveWindowAcrossMonitors = false;
+    bool moveWindowsBasedOnPosition = false;
     bool appLastZone_moveWindows = false;
     bool openWindowOnActiveMonitor = false;
     bool restoreSize = false;
@@ -29,7 +30,7 @@ struct Settings
     bool showZonesOnAllMonitors = false;
     bool spanZonesAcrossMonitors = false;
     bool makeDraggedWindowTransparent = true;
-    std::wstring zoneColor = L"#F5FCFF";
+    std::wstring zoneColor = L"#AACDFF";
     std::wstring zoneBorderColor = L"#FFFFFF";
     std::wstring zoneHighlightColor = L"#008CFF";
     int zoneHighlightOpacity = 50;
@@ -48,4 +49,4 @@ interface __declspec(uuid("{BA4E77C4-6F44-4C5D-93D3-CBDE880495C2}")) IFancyZones
     IFACEMETHOD_(const Settings*, GetSettings)() const = 0;
 };
 
-winrt::com_ptr<IFancyZonesSettings> MakeFancyZonesSettings(HINSTANCE hinstance, PCWSTR config) noexcept;
+winrt::com_ptr<IFancyZonesSettings> MakeFancyZonesSettings(HINSTANCE hinstance, PCWSTR name, PCWSTR key) noexcept;

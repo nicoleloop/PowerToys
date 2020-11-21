@@ -14,7 +14,7 @@ namespace Microsoft.Plugin.Program.Storage
 
         public List<FileSystemWatcherWrapper> FileSystemWatchers { get; set; }
 
-        private bool _disposed = false;
+        private bool _disposed;
 
         // This class contains the list of directories to watch and initializes the File System Watchers
         public Win32ProgramFileSystemWatchers()
@@ -28,9 +28,10 @@ namespace Microsoft.Plugin.Program.Storage
         {
             string[] paths = new string[]
                             {
-                               Environment.GetFolderPath(Environment.SpecialFolder.Programs),
-                               Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),
+                               Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
+                               Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu),
                                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                               Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
                             };
             return paths;
         }

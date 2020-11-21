@@ -2,11 +2,12 @@
 #include "shortcut_guide.h"
 #include "target_state.h"
 #include "trace.h"
-#include "resource.h"
 
 #include <common/common.h>
 #include <common/settings_objects.h>
 #include <common/debug_control.h>
+#include <sstream>
+#include <modules\shortcut_guide\ShortcutGuideConstants.h>
 
 extern "C" IMAGE_DOS_HEADER __ImageBase;
 
@@ -29,17 +30,85 @@ namespace
         }
         return CallNextHookEx(NULL, nCode, wParam, lParam);
     }
+
+    // Window properties relevant to ShortcutGuide
+    struct ShortcutGuideWindowInfo
+    {
+        HWND hwnd = nullptr; // Handle to the top-level foreground window or nullptr if there is no such window
+        bool snappable = false; // True, if the window can react to Windows Snap keys
+    };
+
+    ShortcutGuideWindowInfo GetShortcutGuideWindowInfo()
+    {
+        ShortcutGuideWindowInfo result;
+        auto active_window = GetForegroundWindow();
+        active_window = GetAncestor(active_window, GA_ROOT);
+        if (!IsWindowVisible(active_window))
+        {
+            return result;
+        }
+        auto style = GetWindowLong(active_window, GWL_STYLE);
+        auto exStyle = GetWindowLong(active_window, GWL_EXSTYLE);
+        if ((style & WS_CHILD) == WS_CHILD ||
+            (style & WS_DISABLED) == WS_DISABLED ||
+            (exStyle & WS_EX_TOOLWINDOW) == WS_EX_TOOLWINDOW ||
+            (exStyle & WS_EX_NOACTIVATE) == WS_EX_NOACTIVATE)
+        {
+            return result;
+        }
+        std::array<char, 256> class_name;
+        GetClassNameA(active_window, class_name.data(), static_cast<int>(class_name.size()));
+        if (is_system_window(active_window, class_name.data()))
+        {
+            return result;
+        }
+        static HWND cortana_hwnd = nullptr;
+        if (cortana_hwnd == nullptr)
+        {
+            if (strcmp(class_name.data(), "Windows.UI.Core.CoreWindow") == 0 &&
+                get_process_path(active_window).ends_with(L"SearchUI.exe"))
+            {
+                cortana_hwnd = active_window;
+                return result;
+            }
+        }
+        else if (cortana_hwnd == active_window)
+        {
+            return result;
+        }
+        result.hwnd = active_window;
+        // In reality, Windows Snap works if even one of those styles is set
+        // for a window, it is just limited. If there is no WS_MAXIMIZEBOX using
+        // WinKey + Up just won't maximize the window. Similary, without
+        // WS_MINIMIZEBOX the window will not get minimized. A "Save As..." dialog
+        // is a example of such window - it can be snapped to both sides and to
+        // all screen corners, but will not get maximized nor minimized.
+        // For now, since ShortcutGuide can only disable entire "Windows Controls"
+        // group, we require that the window supports all the options.
+        result.snappable = ((style & WS_MAXIMIZEBOX) == WS_MAXIMIZEBOX) &&
+                           ((style & WS_MINIMIZEBOX) == WS_MINIMIZEBOX) &&
+                           ((style & WS_THICKFRAME) == WS_THICKFRAME);
+        return result;
+    }
 }
 
 OverlayWindow::OverlayWindow()
 {
     app_name = GET_RESOURCE_STRING(IDS_SHORTCUT_GUIDE);
+    app_key = ShortcutGuideConstants::ModuleKey;
     init_settings();
 }
 
+// Return the localized display name of the powertoy
 const wchar_t* OverlayWindow::get_name()
 {
     return app_name.c_str();
+}
+
+// Return the non localized key of the powertoy, this will be cached by the runner
+const wchar_t* OverlayWindow::get_key()
+{
+    return app_key.c_str();
 }
 
 bool OverlayWindow::get_config(wchar_t* buffer, int* buffer_size)
@@ -82,7 +151,7 @@ void OverlayWindow::set_config(const wchar_t* config)
     {
         // save configuration
         PowerToysSettings::PowerToyValues _values =
-            PowerToysSettings::PowerToyValues::from_json_string(config);
+            PowerToysSettings::PowerToyValues::from_json_string(config, get_key());
         _values.save_to_settings_file();
         Trace::SettingsChanged(pressTime.value, overlayOpacity.value, theme.value);
 
@@ -165,7 +234,10 @@ void OverlayWindow::enable()
             hook_handle = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), NULL);
             if (!hook_handle)
             {
-                MessageBoxW(NULL, L"Cannot install keyboard listener.", L"PowerToys - Shortcut Guide", MB_OK | MB_ICONERROR);
+                DWORD errorCode = GetLastError();
+                show_last_error_message(L"SetWindowsHookEx", errorCode, L"PowerToys - Shortcut Guide");
+                auto errorMessage = get_last_error_message(errorCode);
+                Trace::Error(errorCode, errorMessage.has_value() ? errorMessage.value() : L"", L"OverlayWindow.enable.SetWindowsHookEx");
             }
         }
         RegisterHotKey(winkey_popup->get_window_handle(), alternative_switch_hotkey_id, alternative_switch_modifier_mask, alternative_switch_vk_code);
@@ -232,8 +304,8 @@ intptr_t OverlayWindow::signal_event(LowlevelKeyboardEvent* event)
 
 void OverlayWindow::on_held()
 {
-    auto filter = get_shortcutguide_filtered_window();
-    winkey_popup->show(filter.hwnd, filter.snappable);
+    auto windowInfo = GetShortcutGuideWindowInfo();
+    winkey_popup->show(windowInfo.hwnd, windowInfo.snappable);
 }
 
 void OverlayWindow::on_held_press(DWORD vkCode)
@@ -268,7 +340,7 @@ void OverlayWindow::init_settings()
     try
     {
         PowerToysSettings::PowerToyValues settings =
-            PowerToysSettings::PowerToyValues::load_from_settings_file(OverlayWindow::get_name());
+            PowerToysSettings::PowerToyValues::load_from_settings_file(OverlayWindow::get_key());
         if (const auto val = settings.get_int_value(pressTime.name))
         {
             pressTime.value = *val;

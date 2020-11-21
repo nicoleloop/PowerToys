@@ -15,6 +15,7 @@
 namespace FancyZonesDataTypes
 {
     struct ZoneSetData;
+    struct DeviceIdData;
     struct DeviceInfoData;
     struct CustomZoneSetData;
     struct AppZoneHistoryData;
@@ -27,6 +28,7 @@ namespace FancyZonesUnitTests
     class FancyZonesIFancyZonesCallbackUnitTests;
     class ZoneSetCalculateZonesUnitTests;
     class ZoneWindowUnitTests;
+    class ZoneWindowCreationUnitTests;
 }
 #endif
 
@@ -57,20 +59,20 @@ public:
         return appZoneHistoryMap;
     }
 
-    void AddDevice(const std::wstring& deviceId);
+    bool AddDevice(const std::wstring& deviceId);
     void CloneDeviceInfo(const std::wstring& source, const std::wstring& destination);
     void UpdatePrimaryDesktopData(const std::wstring& desktopId);
     void RemoveDeletedDesktops(const std::vector<std::wstring>& activeDesktops);
 
     bool IsAnotherWindowOfApplicationInstanceZoned(HWND window, const std::wstring_view& deviceId) const;
     void UpdateProcessIdToHandleMap(HWND window, const std::wstring_view& deviceId);
-    std::vector<int> GetAppLastZoneIndexSet(HWND window, const std::wstring_view& deviceId, const std::wstring_view& zoneSetId) const;
+    std::vector<size_t> GetAppLastZoneIndexSet(HWND window, const std::wstring_view& deviceId, const std::wstring_view& zoneSetId) const;
     bool RemoveAppLastZone(HWND window, const std::wstring_view& deviceId, const std::wstring_view& zoneSetId);
-    bool SetAppLastZones(HWND window, const std::wstring& deviceId, const std::wstring& zoneSetId, const std::vector<int>& zoneIndexSet);
+    bool SetAppLastZones(HWND window, const std::wstring& deviceId, const std::wstring& zoneSetId, const std::vector<size_t>& zoneIndexSet);
 
     void SetActiveZoneSet(const std::wstring& deviceId, const FancyZonesDataTypes::ZoneSetData& zoneSet);
 
-    bool SerializeDeviceInfoToTmpFile(const std::wstring& uniqueId) const;
+    void SerializeDeviceInfoToTmpFile(const GUID& currentVirtualDesktop) const;
     void ParseDataFromTmpFiles();
 
     json::JsonObject GetPersistFancyZonesJSON();
@@ -83,6 +85,7 @@ private:
     friend class FancyZonesUnitTests::FancyZonesDataUnitTests;
     friend class FancyZonesUnitTests::FancyZonesIFancyZonesCallbackUnitTests;
     friend class FancyZonesUnitTests::ZoneWindowUnitTests;
+    friend class FancyZonesUnitTests::ZoneWindowCreationUnitTests;
     friend class FancyZonesUnitTests::ZoneSetCalculateZonesUnitTests;
 
     inline void SetDeviceInfo(const std::wstring& deviceId, FancyZonesDataTypes::DeviceInfoData data)
@@ -111,10 +114,9 @@ private:
     }
 #endif
     void ParseDeviceInfoFromTmpFile(std::wstring_view tmpFilePath);
-    void ParseCustomZoneSetFromTmpFile(std::wstring_view tmpFilePath);
+    void ParseCustomZoneSetsFromTmpFile(std::wstring_view tmpFilePath);
     void ParseDeletedCustomZoneSetsFromTmpFile(std::wstring_view tmpFilePath);
 
-    void MigrateCustomZoneSetsFromRegistry();
     void RemoveDesktopAppZoneHistory(const std::wstring& desktopId);
 
     // Maps app path to app's zone history data
@@ -135,3 +137,11 @@ private:
 };
 
 FancyZonesData& FancyZonesDataInstance();
+
+namespace DefaultValues
+{
+    const int ZoneCount = 3;
+    const bool ShowSpacing = true;
+    const int Spacing = 16;
+    const int SensitivityRadius = 20;
+}

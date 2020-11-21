@@ -105,7 +105,16 @@ namespace FancyZonesDataTypes
 
         std::wstring zoneSetUuid;
         std::wstring deviceId;
-        std::vector<int> zoneIndexSet;
+        std::vector<size_t> zoneIndexSet;
+    };
+
+    struct DeviceIdData
+    {
+        std::wstring deviceName;
+        int width;
+        int height;
+        GUID virtualDesktopId;
+        std::wstring monitorId;
     };
 
     struct DeviceInfoData
@@ -114,5 +123,6 @@ namespace FancyZonesDataTypes
         bool showSpacing;
         int spacing;
         int zoneCount;
+        int sensitivityRadius;
     };
 }

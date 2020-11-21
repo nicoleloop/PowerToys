@@ -1,8 +1,10 @@
 #include "pch.h"
 #include "PowerRenameRegEx.h"
+#include "Settings.h"
 #include <regex>
 #include <string>
 #include <algorithm>
+#include <boost/regex.hpp>
 
 
 using namespace std;
@@ -71,7 +73,7 @@ IFACEMETHODIMP CPowerRenameRegEx::UnAdvise(_In_ DWORD cookie)
     return hr;
 }
 
-IFACEMETHODIMP CPowerRenameRegEx::get_searchTerm(_Outptr_ PWSTR* searchTerm)
+IFACEMETHODIMP CPowerRenameRegEx::GetSearchTerm(_Outptr_ PWSTR* searchTerm)
 {
     *searchTerm = nullptr;
     HRESULT hr = m_searchTerm ? S_OK : E_FAIL;
@@ -83,7 +85,7 @@ IFACEMETHODIMP CPowerRenameRegEx::get_searchTerm(_Outptr_ PWSTR* searchTerm)
     return hr;
 }
 
-IFACEMETHODIMP CPowerRenameRegEx::put_searchTerm(_In_ PCWSTR searchTerm)
+IFACEMETHODIMP CPowerRenameRegEx::PutSearchTerm(_In_ PCWSTR searchTerm)
 {
     bool changed = false;
     HRESULT hr = searchTerm ? S_OK : E_INVALIDARG;
@@ -106,7 +108,7 @@ IFACEMETHODIMP CPowerRenameRegEx::put_searchTerm(_In_ PCWSTR searchTerm)
     return hr;
 }
 
-IFACEMETHODIMP CPowerRenameRegEx::get_replaceTerm(_Outptr_ PWSTR* replaceTerm)
+IFACEMETHODIMP CPowerRenameRegEx::GetReplaceTerm(_Outptr_ PWSTR* replaceTerm)
 {
     *replaceTerm = nullptr;
     HRESULT hr = m_replaceTerm ? S_OK : E_FAIL;
@@ -118,7 +120,7 @@ IFACEMETHODIMP CPowerRenameRegEx::get_replaceTerm(_Outptr_ PWSTR* replaceTerm)
     return hr;
 }
 
-IFACEMETHODIMP CPowerRenameRegEx::put_replaceTerm(_In_ PCWSTR replaceTerm)
+IFACEMETHODIMP CPowerRenameRegEx::PutReplaceTerm(_In_ PCWSTR replaceTerm)
 {
     bool changed = false;
     HRESULT hr = replaceTerm ? S_OK : E_INVALIDARG;
@@ -141,13 +143,13 @@ IFACEMETHODIMP CPowerRenameRegEx::put_replaceTerm(_In_ PCWSTR replaceTerm)
     return hr;
 }
 
-IFACEMETHODIMP CPowerRenameRegEx::get_flags(_Out_ DWORD* flags)
+IFACEMETHODIMP CPowerRenameRegEx::GetFlags(_Out_ DWORD* flags)
 {
     *flags = m_flags;
     return S_OK;
 }
 
-IFACEMETHODIMP CPowerRenameRegEx::put_flags(_In_ DWORD flags)
+IFACEMETHODIMP CPowerRenameRegEx::PutFlags(_In_ DWORD flags)
 {
     if (m_flags != flags)
     {
@@ -177,6 +179,8 @@ CPowerRenameRegEx::CPowerRenameRegEx() :
     // Init to empty strings
     SHStrDup(L"", &m_searchTerm);
     SHStrDup(L"", &m_replaceTerm);
+
+    _useBoostLib = CSettingsInstance().GetUseBoostLib();
 }
 
 CPowerRenameRegEx::~CPowerRenameRegEx()
@@ -206,14 +210,29 @@ HRESULT CPowerRenameRegEx::Replace(_In_ PCWSTR source, _Outptr_ PWSTR* result)
 
             if (m_flags & UseRegularExpressions)
             {
-                std::wregex pattern(m_searchTerm, (!(m_flags & CaseSensitive)) ? regex_constants::icase | regex_constants::ECMAScript : regex_constants::ECMAScript);
-                if (m_flags & MatchAllOccurences)
+                if (_useBoostLib)
                 {
-                    res = regex_replace(wstring(source), pattern, replaceTerm);
+                    boost::wregex pattern(m_searchTerm, (!(m_flags & CaseSensitive)) ? boost::regex::icase | boost::regex::ECMAScript : boost::regex::ECMAScript);
+                    if (m_flags & MatchAllOccurences)
+                    {
+                        res = boost::regex_replace(wstring(source), pattern, replaceTerm);
+                    }
+                    else
+                    {
+                        res = boost::regex_replace(wstring(source), pattern, replaceTerm, boost::regex_constants::format_first_only);
+                    }
                 }
                 else
                 {
-                    res = regex_replace(wstring(source), pattern, replaceTerm, regex_constants::format_first_only);
+                    std::wregex pattern(m_searchTerm, (!(m_flags & CaseSensitive)) ? regex_constants::icase | regex_constants::ECMAScript : regex_constants::ECMAScript);
+                    if (m_flags & MatchAllOccurences)
+                    {
+                        res = regex_replace(wstring(source), pattern, replaceTerm);
+                    }
+                    else
+                    {
+                        res = regex_replace(wstring(source), pattern, replaceTerm, regex_constants::format_first_only);
+                    }
                 }
             }
             else

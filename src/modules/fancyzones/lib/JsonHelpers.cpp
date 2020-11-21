@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "JsonHelpers.h"
+#include "FancyZonesData.h"
 #include "FancyZonesDataTypes.h"
 #include "trace.h"
 #include "util.h"
@@ -14,12 +15,14 @@
 namespace NonLocalizable
 {
     const wchar_t ActiveZoneSetStr[] = L"active-zoneset";
+    const wchar_t AppliedZonesets[] = L"applied-zonesets";
     const wchar_t AppPathStr[] = L"app-path";
     const wchar_t AppZoneHistoryStr[] = L"app-zone-history";
     const wchar_t CanvasStr[] = L"canvas";
     const wchar_t CellChildMapStr[] = L"cell-child-map";
     const wchar_t ColumnsPercentageStr[] = L"columns-percentage";
     const wchar_t ColumnsStr[] = L"columns";
+    const wchar_t CreatedCustomZoneSets[] = L"created-custom-zone-sets";
     const wchar_t CustomZoneSetsStr[] = L"custom-zone-sets";
     const wchar_t DeletedCustomZoneSetsStr[] = L"deleted-custom-zone-sets";
     const wchar_t DeviceIdStr[] = L"device-id";
@@ -27,6 +30,7 @@ namespace NonLocalizable
     const wchar_t EditorShowSpacingStr[] = L"editor-show-spacing";
     const wchar_t EditorSpacingStr[] = L"editor-spacing";
     const wchar_t EditorZoneCountStr[] = L"editor-zone-count";
+    const wchar_t EditorSensitivityRadiusStr[] = L"editor-sensitivity-radius";
     const wchar_t GridStr[] = L"grid";
     const wchar_t HeightStr[] = L"height";
     const wchar_t HistoryStr[] = L"history";
@@ -77,20 +81,20 @@ namespace
         if (json.HasKey(NonLocalizable::ZoneIndexSetStr))
         {
             data.zoneIndexSet = {};
-            for (auto& value : json.GetNamedArray(NonLocalizable::ZoneIndexSetStr))
+            for (const auto& value : json.GetNamedArray(NonLocalizable::ZoneIndexSetStr))
             {
-                data.zoneIndexSet.push_back(static_cast<int>(value.GetNumber()));
+                data.zoneIndexSet.push_back(static_cast<size_t>(value.GetNumber()));
             }
         }
         else if (json.HasKey(NonLocalizable::ZoneIndexStr))
         {
-            data.zoneIndexSet = { static_cast<int>(json.GetNamedNumber(NonLocalizable::ZoneIndexStr)) };
+            data.zoneIndexSet = { static_cast<size_t>(json.GetNamedNumber(NonLocalizable::ZoneIndexStr)) };
         }
 
         data.deviceId = json.GetNamedString(NonLocalizable::DeviceIdStr);
         data.zoneSetUuid = json.GetNamedString(NonLocalizable::ZoneSetUuidStr);
 
-        if (!IsValidGuid(data.zoneSetUuid) || !IsValidDeviceId(data.deviceId))
+        if (!FancyZonesUtils::IsValidGuid(data.zoneSetUuid) || !FancyZonesUtils::IsValidDeviceId(data.deviceId))
         {
             return std::nullopt;
         }
@@ -250,7 +254,7 @@ namespace JSONHelpers
             CustomZoneSetJSON result;
 
             result.uuid = customZoneSet.GetNamedString(NonLocalizable::UuidStr);
-            if (!IsValidGuid(result.uuid))
+            if (!FancyZonesUtils::IsValidGuid(result.uuid))
             {
                 return std::nullopt;
             }
@@ -314,7 +318,7 @@ namespace JSONHelpers
             zoneSetData.uuid = zoneSet.GetNamedString(NonLocalizable::UuidStr);
             zoneSetData.type = FancyZonesDataTypes::TypeFromString(std::wstring{ zoneSet.GetNamedString(NonLocalizable::TypeStr) });
 
-            if (!IsValidGuid(zoneSetData.uuid))
+            if (!FancyZonesUtils::IsValidGuid(zoneSetData.uuid))
             {
                 return std::nullopt;
             }
@@ -338,9 +342,9 @@ namespace JSONHelpers
         {
             json::JsonObject desktopData;
             json::JsonArray jsonIndexSet;
-            for (int index : data.zoneIndexSet)
+            for (size_t index : data.zoneIndexSet)
             {
-                jsonIndexSet.Append(json::value(index));
+                jsonIndexSet.Append(json::value(static_cast<int>(index)));
             }
 
             desktopData.SetNamedValue(NonLocalizable::ZoneIndexSetStr, jsonIndexSet);
@@ -404,6 +408,7 @@ namespace JSONHelpers
         result.SetNamedValue(NonLocalizable::EditorShowSpacingStr, json::value(device.data.showSpacing));
         result.SetNamedValue(NonLocalizable::EditorSpacingStr, json::value(device.data.spacing));
         result.SetNamedValue(NonLocalizable::EditorZoneCountStr, json::value(device.data.zoneCount));
+        result.SetNamedValue(NonLocalizable::EditorSensitivityRadiusStr, json::value(device.data.sensitivityRadius));
 
         return result;
     }
@@ -415,7 +420,7 @@ namespace JSONHelpers
             DeviceInfoJSON result;
 
             result.deviceId = device.GetNamedString(NonLocalizable::DeviceIdStr);
-            if (!IsValidDeviceId(result.deviceId))
+            if (!FancyZonesUtils::IsValidDeviceId(result.deviceId))
             {
                 return std::nullopt;
             }
@@ -431,10 +436,68 @@ namespace JSONHelpers
 
             result.data.showSpacing = device.GetNamedBoolean(NonLocalizable::EditorShowSpacingStr);
             result.data.spacing = static_cast<int>(device.GetNamedNumber(NonLocalizable::EditorSpacingStr));
-            result.data.zoneCount = static_cast<int>(
-                device.GetNamedNumber(NonLocalizable::EditorZoneCountStr));
+            result.data.zoneCount = static_cast<int>(device.GetNamedNumber(NonLocalizable::EditorZoneCountStr));
+            result.data.sensitivityRadius = static_cast<int>(device.GetNamedNumber(NonLocalizable::EditorSensitivityRadiusStr, DefaultValues::SensitivityRadius));
 
             return result;
+        }
+        catch (const winrt::hresult_error&)
+        {
+            return std::nullopt;
+        }
+    }
+
+    json::JsonObject AppliedZonesetsJSON::ToJson(const TDeviceInfoMap& deviceInfoMap)
+    {
+        json::JsonObject result{};
+
+        json::JsonArray array;
+        for (const auto& info : deviceInfoMap)
+        {
+            JSONHelpers::DeviceInfoJSON deviceInfoJson{ info.first, info.second };
+            array.Append(JSONHelpers::DeviceInfoJSON::ToJson(deviceInfoJson));
+        }
+
+        result.SetNamedValue(NonLocalizable::AppliedZonesets, array);
+        return result;
+    }
+
+    json::JsonObject AppliedZonesetsJSON::ToJson(const TDeviceInfoMap& deviceInfoMap, const GUID& currentVirtualDesktop)
+    {
+        json::JsonObject result{};
+
+        json::JsonArray array;
+        for (const auto& info : deviceInfoMap)
+        {
+            std::optional<FancyZonesDataTypes::DeviceIdData> id = FancyZonesUtils::ParseDeviceId(info.first);
+            if (id.has_value() && id->virtualDesktopId == currentVirtualDesktop)
+            {
+                JSONHelpers::DeviceInfoJSON deviceInfoJson{ info.first, info.second };
+                array.Append(JSONHelpers::DeviceInfoJSON::ToJson(deviceInfoJson));
+            }
+        }
+
+        result.SetNamedValue(NonLocalizable::AppliedZonesets, array);
+        return result;
+    }
+
+    std::optional<TDeviceInfoMap> AppliedZonesetsJSON::FromJson(const json::JsonObject& json)
+    {
+        try
+        {
+            std::unordered_map<std::wstring, FancyZonesDataTypes::DeviceInfoData> appliedZonesets;
+
+            auto zonesets = json.GetNamedArray(NonLocalizable::AppliedZonesets);
+            for (const auto& zoneset : zonesets)
+            {
+                std::optional<DeviceInfoJSON> device = DeviceInfoJSON::FromJson(zoneset.GetObjectW());
+                if (device.has_value())
+                {
+                    appliedZonesets.insert(std::make_pair(device->deviceId, device->data));
+                }
+            }
+
+            return appliedZonesets;
         }
         catch (const winrt::hresult_error&)
         {
@@ -556,10 +619,7 @@ namespace JSONHelpers
 
         for (const auto& [deviceID, deviceData] : deviceInfoMap)
         {
-            if (deviceData.activeZoneSet.type != FancyZonesDataTypes::ZoneSetLayoutType::Blank)
-            {
-                DeviceInfosJSON.Append(DeviceInfoJSON::DeviceInfoJSON::ToJson(DeviceInfoJSON{ deviceID, deviceData }));
-            }
+            DeviceInfosJSON.Append(DeviceInfoJSON::DeviceInfoJSON::ToJson(DeviceInfoJSON{ deviceID, deviceData }));
         }
 
         return DeviceInfosJSON;
@@ -600,20 +660,34 @@ namespace JSONHelpers
         return customZoneSetsJSON;
     }
 
-    void SerializeDeviceInfoToTmpFile(const JSONHelpers::DeviceInfoJSON& deviceInfo, std::wstring_view tmpFilePath)
+    void SerializeDeviceInfoToTmpFile(const TDeviceInfoMap& deviceInfoMap, const GUID& currentVirtualDesktop, std::wstring_view tmpFilePath)
     {
-        json::JsonObject deviceInfoJson = JSONHelpers::DeviceInfoJSON::ToJson(deviceInfo);
-        json::to_file(tmpFilePath, deviceInfoJson);
+        json::to_file(tmpFilePath, JSONHelpers::AppliedZonesetsJSON::ToJson(deviceInfoMap, currentVirtualDesktop));
     }
 
-    std::optional<DeviceInfoJSON> ParseDeviceInfoFromTmpFile(std::wstring_view tmpFilePath)
+    void SerializeCustomZoneSetsToTmpFile(const TCustomZoneSetsMap& customZoneSetsMap, std::wstring_view tmpFilePath)
     {
-        std::optional<DeviceInfoJSON> result{ std::nullopt };
+        json::JsonObject result{};
+
+        json::JsonArray array;
+        for (const auto& zoneSet : customZoneSetsMap)
+        {
+            CustomZoneSetJSON json{ zoneSet.first, zoneSet.second };
+            array.Append(JSONHelpers::CustomZoneSetJSON::ToJson(json));
+        }
+
+        result.SetNamedValue(NonLocalizable::CreatedCustomZoneSets, array);
+        json::to_file(tmpFilePath, result);
+    }
+
+    std::optional<TDeviceInfoMap> ParseDeviceInfoFromTmpFile(std::wstring_view tmpFilePath)
+    {
+        std::optional<TDeviceInfoMap> result{ std::nullopt };
         if (std::filesystem::exists(tmpFilePath))
         {
             if (auto zoneSetJson = json::from_file(tmpFilePath); zoneSetJson.has_value())
             {
-                if (auto deviceInfo = JSONHelpers::DeviceInfoJSON::FromJson(zoneSetJson.value()); deviceInfo.has_value())
+                if (auto deviceInfo = JSONHelpers::AppliedZonesetsJSON::FromJson(zoneSetJson.value()); deviceInfo.has_value())
                 {
                     result = std::move(deviceInfo);
                 }
@@ -624,24 +698,27 @@ namespace JSONHelpers
         return result;
     }
 
-    std::optional<CustomZoneSetJSON> ParseCustomZoneSetFromTmpFile(std::wstring_view tmpFilePath)
+    std::vector<CustomZoneSetJSON> ParseCustomZoneSetsFromTmpFile(std::wstring_view tmpFilePath)
     {
-        std::optional<CustomZoneSetJSON> result{ std::nullopt };
+        std::vector<CustomZoneSetJSON> result;
         if (std::filesystem::exists(tmpFilePath))
         {
             try
             {
                 if (auto customZoneSetJson = json::from_file(tmpFilePath); customZoneSetJson.has_value())
                 {
-                    if (auto customZoneSet = JSONHelpers::CustomZoneSetJSON::FromJson(customZoneSetJson.value()); customZoneSet.has_value())
+                    auto zoneSetArray = customZoneSetJson.value().GetNamedArray(NonLocalizable::CreatedCustomZoneSets);
+                    for (const auto& zoneSet : zoneSetArray)
                     {
-                        result = std::move(customZoneSet);
+                        if (auto customZoneSet = JSONHelpers::CustomZoneSetJSON::FromJson(zoneSet.GetObjectW()); customZoneSet.has_value())
+                        {
+                            result.emplace_back(std::move(*customZoneSet));
+                        }
                     }
                 }
             }
             catch (const winrt::hresult_error&)
             {
-                result = std::nullopt;
             }
 
             DeleteTmpFile(tmpFilePath);
